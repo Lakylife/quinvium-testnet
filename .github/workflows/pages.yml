@@ -1,0 +1,54 @@
+# GitHub Pages for testnet.quinvium.com. Copy this file to .github/workflows/pages.yml in the repository Lakylife/quinvium-testnet
+# (one repository per domain: GitHub Pages serves one custom domain per repository).
+# It publishes packages/explorer/public from the protected main branch of Lakylife/quinvium, unchanged, every 30 minutes
+# when main has moved, or by hand. The Explorer reads chain data from the public RPC nodes in config.js.
+name: pages
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Lakylife/quinvium
+          ref: main
+          path: src
+      - name: Is main newer than the published site?
+        id: check
+        run: |
+          now=$(git -C src rev-parse HEAD)
+          live=$(curl -fsS https://testnet.quinvium.com/source-commit.txt || true)
+          echo "commit=$now" >> "$GITHUB_OUTPUT"
+          if [ "$now" = "$live" ] && [ "${{ github.event_name }}" = schedule ]; then echo "skip=1" >> "$GITHUB_OUTPUT"; fi
+      - name: Site files
+        if: steps.check.outputs.skip != '1'
+        run: |
+          mkdir _site
+          cp -r src/packages/explorer/public/. _site/
+          # Addresses such as /address/0x… are routes of the page itself: an unknown path gets the same page.
+          cp _site/index.html _site/404.html
+          echo testnet.quinvium.com > _site/CNAME
+          echo "${{ steps.check.outputs.commit }}" > _site/source-commit.txt
+          # The testnet would only duplicate the mainnet Explorer in search results.
+          printf 'User-agent: *\nDisallow: /\n' > _site/robots.txt
+          rm -f _site/sitemap.xml
+      - if: steps.check.outputs.skip != '1'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
+      - if: steps.check.outputs.skip != '1'
+        id: deploy
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
