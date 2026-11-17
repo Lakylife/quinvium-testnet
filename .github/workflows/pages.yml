@@ -32,7 +32,8 @@ jobs:
           now=$(git -C src rev-parse HEAD)
           live=$(curl -fsS https://testnet.quinvium.com/source-commit.txt || true)
           echo "commit=$now" >> "$GITHUB_OUTPUT"
-          if [ "$now" = "$live" ] && [ "${{ github.event_name }}" = schedule ]; then echo "skip=1" >> "$GITHUB_OUTPUT"; fi
+          # Once an hour the site is published even without a new commit, to refresh nodes.json.
+          if [ "$now" = "$live" ] && [ "${{ github.event_name }}" = schedule ] && [ "$(date -u +%M)" -ge 30 ]; then echo "skip=1" >> "$GITHUB_OUTPUT"; fi
       - name: Site files
         if: steps.check.outputs.skip != '1'
         run: |
@@ -42,6 +43,8 @@ jobs:
           cp _site/index.html _site/404.html
           echo testnet.quinvium.com > _site/CNAME
           echo "${{ steps.check.outputs.commit }}" > _site/source-commit.txt
+          # Community nodes for an outage of our servers; refreshed at every deploy, and at least once an hour.
+          node src/ops/pages/nodes.mjs --chain 52402 --genesis 0x4845f69c270efcf1f74a789a9ad85d31a5128a1907a7fdf5d1dd131eebaed121 --rpc https://rpc1.quinvium.com --previous https://testnet.quinvium.com/nodes.json --out _site/nodes.json
           # The testnet would only duplicate the mainnet Explorer in search results.
           printf 'User-agent: *\nDisallow: /\n' > _site/robots.txt
           rm -f _site/sitemap.xml
